@@ -13,9 +13,10 @@ import { composeRef } from 'rc-util/lib/ref';
 import * as React from 'react';
 import { ConfigContext } from '../../config-provider';
 import { useLocaleReceiver } from '../../locale-provider/LocaleReceiver';
-import Tooltip from '../../tooltip';
-import { isStyleSupport } from '../../_util/styleChecker';
 import TransButton from '../../_util/transButton';
+import { isStyleSupport } from '../../_util/styleChecker';
+import type { TooltipProps } from '../../tooltip';
+import Tooltip from '../../tooltip';
 import Editable from '../Editable';
 import useMergedConfig from '../hooks/useMergedConfig';
 import useUpdatedEffect from '../hooks/useUpdatedEffect';
@@ -55,7 +56,7 @@ export interface EllipsisConfig {
   symbol?: React.ReactNode;
   onExpand?: React.MouseEventHandler<HTMLElement>;
   onEllipsis?: (ellipsis: boolean) => void;
-  tooltip?: React.ReactNode;
+  tooltip?: React.ReactNode | TooltipProps;
 }
 
 export interface BlockProps extends TypographyProps {
@@ -226,6 +227,7 @@ const Base = React.forwardRef((props: InternalBlockProps, ref: any) => {
   const [expanded, setExpanded] = React.useState(false);
   const [isJsEllipsis, setIsJsEllipsis] = React.useState(false);
   const [isNativeEllipsis, setIsNativeEllipsis] = React.useState(false);
+  const [isNativeVisible, setIsNativeVisible] = React.useState(true);
   const [enableEllipsis, ellipsisConfig] = useMergedConfig<EllipsisConfig>(ellipsis, {
     expandable: false,
   });
@@ -306,10 +308,43 @@ const Base = React.forwardRef((props: InternalBlockProps, ref: any) => {
         setIsNativeEllipsis(currentEllipsis);
       }
     }
-  }, [enableEllipsis, cssEllipsis, children, cssLineClamp]);
+  }, [enableEllipsis, cssEllipsis, children, cssLineClamp, isNativeVisible]);
+
+  // https://github.com/ant-design/ant-design/issues/36786
+  // Use IntersectionObserver to check if element is invisible
+  React.useEffect(() => {
+    const textEle = typographyRef.current;
+    if (
+      typeof IntersectionObserver === 'undefined' ||
+      !textEle ||
+      !cssEllipsis ||
+      !mergedEnableEllipsis
+    ) {
+      return;
+    }
+
+    /* eslint-disable-next-line compat/compat */
+    const observer = new IntersectionObserver(() => {
+      setIsNativeVisible(!!textEle.offsetParent);
+    });
+    observer.observe(textEle!);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [cssEllipsis, mergedEnableEllipsis]);
 
   // ========================== Tooltip ===========================
-  const tooltipTitle = ellipsisConfig.tooltip === true ? children : ellipsisConfig.tooltip;
+  let tooltipProps: TooltipProps = {};
+  if (ellipsisConfig.tooltip === true) {
+    tooltipProps = { title: children };
+  } else if (React.isValidElement(ellipsisConfig.tooltip)) {
+    tooltipProps = { title: ellipsisConfig.tooltip };
+  } else if (typeof ellipsisConfig.tooltip === 'object') {
+    tooltipProps = { title: children, ...ellipsisConfig.tooltip };
+  } else {
+    tooltipProps = { title: ellipsisConfig.tooltip };
+  }
   const topAriaLabel = React.useMemo(() => {
     const isValid = (val: any) => ['string', 'number'].includes(typeof val);
 
@@ -325,12 +360,12 @@ const Base = React.forwardRef((props: InternalBlockProps, ref: any) => {
       return title;
     }
 
-    if (isValid(tooltipTitle)) {
-      return tooltipTitle;
+    if (isValid(tooltipProps.title)) {
+      return tooltipProps.title;
     }
 
     return undefined;
-  }, [enableEllipsis, cssEllipsis, title, tooltipTitle, isMergedEllipsis]);
+  }, [enableEllipsis, cssEllipsis, title, tooltipProps.title, isMergedEllipsis]);
 
   // =========================== Render ===========================
   // >>>>>>>>>>> Editing input
@@ -452,7 +487,7 @@ const Base = React.forwardRef((props: InternalBlockProps, ref: any) => {
     <ResizeObserver onResize={onResize} disabled={!mergedEnableEllipsis || cssEllipsis}>
       {resizeRef => (
         <EllipsisTooltip
-          title={tooltipTitle}
+          tooltipProps={tooltipProps}
           enabledEllipsis={mergedEnableEllipsis}
           isEllipsis={isMergedEllipsis}
         >
